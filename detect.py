@@ -186,13 +186,15 @@ def run(
                         #label = None if hide_labels else (names[c] if hide_conf else f'{names[c]} {conf:.2f}')
                         label = None if hide_labels else (names[c])
                         annotator.box_label(xyxy, label, color=colors(c, True))
-                        if label == 'person': # Bed
+                        if label == 'bed': # Bed
+                        # if label == 'person': # Bed
                             # s += f"FOUND {label}({xyxy[0]} {xyxy[1]} {xyxy[2]} {xyxy[3]}), "
                             b0 = xyxy[0]
                             b1 = xyxy[1]
                             b2 = xyxy[2]
                             b3 = xyxy[3]
-                        if label == 'cup': # Patient
+                        if label == 'person': # Patient
+                        # if label == 'cup': # Patient
                             # s += f"FOUND {label}({xyxy[0]} {xyxy[1]} {xyxy[2]} {xyxy[3]}), "
                             p0 = xyxy[0]
                             p1 = xyxy[1]
