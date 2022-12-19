@@ -36,6 +36,8 @@ from pathlib import Path
 
 import torch
 
+import requests
+
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
 if str(ROOT) not in sys.path:
@@ -113,6 +115,8 @@ def run(
     vid_path, vid_writer = [None] * bs, [None] * bs
 
     LOGGER.info('kay start')
+    medi_in_bed = 100
+    medi_out_of_bed_alert = 0
     # Run inference
     model.warmup(imgsz=(1 if pt or model.triton else bs, 3, *imgsz))  # warmup
     seen, windows, dt = 0, [], (Profile(), Profile(), Profile())
@@ -161,6 +165,14 @@ def run(
                     n = (det[:, 5] == c).sum()  # detections per class
                     s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
 
+                b0 = 1.0 # x1
+                b1 = 1.0 # y1
+                b2 = 640.0 # x2
+                b3 = 480.0 # y2
+                p0 = 0.0 # x1
+                p1 = 0.0 # y1
+                p2 = 0.0 # x2
+                p3 = 0.0 # y2
                 # Write results
                 for *xyxy, conf, cls in reversed(det):
                     if save_txt:  # Write to file
@@ -171,10 +183,27 @@ def run(
 
                     if save_img or save_crop or view_img:  # Add bbox to image
                         c = int(cls)  # integer class
-                        label = None if hide_labels else (names[c] if hide_conf else f'{names[c]} {conf:.2f}')
+                        #label = None if hide_labels else (names[c] if hide_conf else f'{names[c]} {conf:.2f}')
+                        label = None if hide_labels else (names[c])
                         annotator.box_label(xyxy, label, color=colors(c, True))
-                    if save_crop:
-                        save_one_box(xyxy, imc, file=save_dir / 'crops' / names[c] / f'{p.stem}.jpg', BGR=True)
+                        if label == 'person': # Bed
+                            # s += f"FOUND {label}({xyxy[0]} {xyxy[1]} {xyxy[2]} {xyxy[3]}), "
+                            b0 = xyxy[0]
+                            b1 = xyxy[1]
+                            b2 = xyxy[2]
+                            b3 = xyxy[3]
+                        if label == 'cup': # Patient
+                            # s += f"FOUND {label}({xyxy[0]} {xyxy[1]} {xyxy[2]} {xyxy[3]}), "
+                            p0 = xyxy[0]
+                            p1 = xyxy[1]
+                            p2 = xyxy[2]
+                            p3 = xyxy[3]
+                    # if save_crop:
+                    #     save_one_box(xyxy, imc, file=save_dir / 'crops' / names[c] / f'{p.stem}.jpg', BGR=True)
+                if (p0 > b0 and p1 > b1 and p2 < b2 and p3 < b3):
+                    medi_in_bed = 100
+                else:
+                    medi_in_bed = 0
 
             # Stream results
             im0 = annotator.result()
@@ -206,7 +235,30 @@ def run(
                     vid_writer[i].write(im0)
 
         # Print time (inference-only)
-        LOGGER.info(f"{s}{'' if len(det) else '(no detections), '}{dt[1].dt * 1E3:.1f}ms")
+        # LOGGER.info(f"{s}{'' if len(det) else '(no detections), '}{dt[1].dt * 1E3:.1f}ms")
+        if medi_in_bed == 100:
+            LOGGER.info('medi_in_bed : 100')
+            # LOGGER.info(f"                    {s}{'' if len(det) else '(no detections), '}{dt[1].dt * 1E3:.1f}ms")
+            medi_out_of_bed_alert = 0
+        else:
+            LOGGER.info('medi_in_bed : 0   ========= OUT OF BED ==========')
+            # LOGGER.info(f" OUT OF BED         {s}{'' if len(det) else '(no detections), '}{dt[1].dt * 1E3:.1f}ms")
+            if medi_out_of_bed_alert == 0:
+                LOGGER.warning('medi_in_bed : 0   ========= ========== ========== SEND ALERT ========== ========== ==========')
+                medi_out_of_bed_alert = 1
+                url = 'http://medi.crazyupinc.com:2332/mcasttv/wrb/cmd'
+                headers = {
+                    'Accept':'application/json, text/plain, */*',
+                    'Content-Type':'application/json'
+                }
+                data = {
+                    'command':'wrb_bed_event',
+                    'wardcode':'83',
+                    'roomcode':'838',
+                    'bednumber':'1'
+                }
+                response = requests.post(url=url, json=data, headers=headers)
+                # LOGGER.warning(f'{response.status_code}')
     LOGGER.info('kay end')
 
     # Print results
